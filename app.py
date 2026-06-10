@@ -4,7 +4,7 @@ import requests
 # Set up the look and feel of the webpage
 st.set_page_config(page_title="PiggyBank | Budget Tracker", page_icon="💰", layout="centered")
 
-BACKEND_URL = "http://127.0.0.1:8000"
+BACKEND_URL = "https://personal-finance-tracker-jdj7.onrender.com/"
 
 # --- Title and App Styling ---
 st.title("💰 PiggyBank")
