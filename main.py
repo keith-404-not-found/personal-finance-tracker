@@ -216,3 +216,16 @@ def delete_all_budgets(current_user: str = Depends(get_current_user), db: Sessio
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    
+    # --- ADD THIS NEW ROUTE ENDPOINT TO THE BOTTOM OF YOUR main.py ---
+
+@app.delete("/expenses/{category}", tags=["Expenses"])
+def delete_category_expenses(category: str, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        # This searches for all expenses matching the selected category for this logged-in user
+        db.query(ExpenseModel).filter(ExpenseModel.category == category, ExpenseModel.username == current_user).delete(synchronize_session=False)
+        db.commit()
+        return {"status": "success", "message": f"Successfully cleared all logged expenses for {category}"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))

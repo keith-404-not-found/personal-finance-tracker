@@ -1,10 +1,10 @@
 import streamlit as st
 import requests
 
-# Set up the look and feel of the webpage
-st.set_page_config(page_title="PiggyBank | Budget Tracker", page_icon="💰", layout="centered")
+# Set up the look and feel of the webpage (Wide layout to avoid the "...")
+st.set_page_config(page_title="PiggyBank | Budget Tracker", page_icon="💰", layout="wide")
 
-# Fixed: Removed the trailing forward slash at the end
+# Fixed URL address pointing to your live Render server
 BACKEND_URL = "https://personal-finance-tracker-jdj7.onrender.com"
 
 # --- Title and App Styling ---
@@ -14,9 +14,7 @@ st.markdown("---")
 
 # --- SIMULATED USER LOGIN ---
 if "token" not in st.session_state:
-    # Auto-register default user on backend
     requests.post(f"{BACKEND_URL}/register", json={"username": "keith", "password": "password123"})
-    # Auto-login to get the token
     login_response = requests.post(f"{BACKEND_URL}/token", data={"username": "keith", "password": "password123"})
     try:
         st.session_state.token = login_response.json().get("access_token")
@@ -41,22 +39,31 @@ if st.sidebar.button("Save Budget", use_container_width=True):
 
 st.sidebar.markdown("---")
 
-# --- NEW FEATURE: BUDGET CONTROLS & MANAGEMENT ---
-with st.sidebar.expander("🛠️ Manage Active Budgets"):
+# --- BUDGET & SPENDING CONTROLS ---
+with st.sidebar.expander("🛠️ Manage Active Categories"):
     st.write(f"Selected Category: **{budget_category}**")
     
-    # Feature 1: Delete Specific Selected Budget
+    # 1. Clear Specific Budget
     if st.button(f"Clear {budget_category} Budget", type="secondary", use_container_width=True):
         del_res = requests.delete(f"{BACKEND_URL}/budgets/{budget_category}", headers=headers)
         if del_res.status_code == 200:
             st.toast(f"Cleared {budget_category} budget! 🗑️")
             st.rerun()
         else:
-            st.error("Budget didn't exist or failed to remove.")
+            st.error("Action failed.")
             
-    st.markdown(" ") # Tiny visual space
+    # 2. NEW FEATURE: Reset Specific Category Expenses (Wipe out Total Spent)
+    if st.button(f"Reset {budget_category} Spent 🔄", type="secondary", use_container_width=True):
+        del_exp_res = requests.delete(f"{BACKEND_URL}/expenses/{budget_category}", headers=headers)
+        if del_exp_res.status_code == 200:
+            st.toast(f"Reset spending tracker for {budget_category}! 🧼")
+            st.rerun()
+        else:
+            st.error("Failed to clear spending records.")
+            
+    st.markdown("---")
     
-    # Feature 2: Clear/Reset All Budgets Entirely
+    # 3. Clear Everything
     if st.button("Reset All Budgets ⚠️", type="primary", use_container_width=True):
         del_all_res = requests.delete(f"{BACKEND_URL}/budgets", headers=headers)
         if del_all_res.status_code == 200:
@@ -110,8 +117,8 @@ if headers:
                     delta_color = "normal" if remaining >= 0 else "inverse"
                     st.metric(
                         label=f"{cat_name} Balance", 
-                        value=f"₱{remaining:.2f}", 
-                        delta=f"Spent: ₱{cat_data['total_spent']:.2f}",
+                        value=f"₱{remaining:,.2f}", 
+                        delta=f"Spent: ₱{cat_data['total_spent']:,.2f}",
                         delta_color=delta_color
                     )
         else:
