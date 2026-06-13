@@ -28,18 +28,42 @@ headers = {"Authorization": f"Bearer {st.session_state.token}"} if st.session_st
 # --- SIDEBAR: SET MONTHLY BUDGET ---
 st.sidebar.header("🎯 Set Your Budget")
 budget_category = st.sidebar.selectbox("Category Budget", ["Dining Out", "Groceries", "Entertainment", "Transport", "Bills"])
-# Changed label to Peso sign (₱)
 budget_limit = st.sidebar.number_input("Monthly Limit (₱)", min_value=1.0, value=200.0, step=10.0)
 
 if st.sidebar.button("Save Budget", use_container_width=True):
     payload = {"category": budget_category, "monthly_limit": budget_limit}
     res = requests.post(f"{BACKEND_URL}/budgets", json=payload, headers=headers)
     if res.status_code == 200:
-        # Changed display text to Peso sign (₱)
         st.sidebar.success(f"Saved! ₱{budget_limit} for {budget_category}")
         st.rerun()
     else:
         st.sidebar.error("Failed to save budget. Check backend connection.")
+
+st.sidebar.markdown("---")
+
+# --- NEW FEATURE: BUDGET CONTROLS & MANAGEMENT ---
+with st.sidebar.expander("🛠️ Manage Active Budgets"):
+    st.write(f"Selected Category: **{budget_category}**")
+    
+    # Feature 1: Delete Specific Selected Budget
+    if st.button(f"Clear {budget_category} Budget", type="secondary", use_container_width=True):
+        del_res = requests.delete(f"{BACKEND_URL}/budgets/{budget_category}", headers=headers)
+        if del_res.status_code == 200:
+            st.toast(f"Cleared {budget_category} budget! 🗑️")
+            st.rerun()
+        else:
+            st.error("Budget didn't exist or failed to remove.")
+            
+    st.markdown(" ") # Tiny visual space
+    
+    # Feature 2: Clear/Reset All Budgets Entirely
+    if st.button("Reset All Budgets ⚠️", type="primary", use_container_width=True):
+        del_all_res = requests.delete(f"{BACKEND_URL}/budgets", headers=headers)
+        if del_all_res.status_code == 200:
+            st.toast("All budgets cleared successfully! 🔥")
+            st.rerun()
+        else:
+            st.error("Failed to clear data records.")
 
 # --- MAIN FORM: ADD NEW EXPENSE ---
 st.header("📝 Log an Expense")
@@ -48,12 +72,9 @@ with st.form("expense_form", clear_on_submit=True):
     with col1:
         category = st.selectbox("What category?", ["Dining Out", "Groceries", "Entertainment", "Transport", "Bills"])
     with col2:
-        # Changed label to Peso sign (₱)
         amount = st.number_input("How much did you spend? (₱)", min_value=0.01, step=1.0)
         
     description = st.text_input("Description (e.g., Coffee on Tuesday, Movie Night)")
-    
-    # Fixed: Cleaned up the variable syntax mismatch from the original code here
     submit_button = st.form_submit_button("Add Expense to Tracker", use_container_width=True)
 
 if submit_button:
@@ -87,7 +108,6 @@ if headers:
                 with cols[idx]:
                     remaining = cat_data['remaining_balance']
                     delta_color = "normal" if remaining >= 0 else "inverse"
-                    # Changed metric cards to show Peso sign (₱)
                     st.metric(
                         label=f"{cat_name} Balance", 
                         value=f"₱{remaining:.2f}", 

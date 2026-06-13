@@ -179,3 +179,21 @@ def get_analytics(current_user: str = Depends(get_current_user), db: Session = D
         "category_reports": report,
         "warnings": warnings if warnings else ["✅ All clear! You are within your budget limits."]
     }
+# --- ADD THESE NEW ROUTE ENDPOINTS TO YOUR main.py ---
+
+@app.delete("/budgets/{category}")
+def delete_specific_budget(category: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    budget = db.query(Budget).filter(Budget.category == category, Budget.user_id == current_user.id).first()
+    if not budget:
+        raise HTTPException(status_code=404, detail="Budget category not found")
+    
+    db.delete(budget)
+    db.commit()
+    return {"message": f"Successfully deleted budget for {category}"}
+
+
+@app.delete("/budgets")
+def delete_all_budgets(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.query(Budget).filter(Budget.user_id == current_user.id).delete()
+    db.commit()
+    return {"message": "All budgets have been successfully reset"}
