@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List
 import datetime as dt
@@ -44,8 +45,17 @@ Base.metadata.create_all(bind=engine)
 # --- FASTAPI APPLICATION INIT ---
 app = FastAPI(title="Personal Finance Tracker (SQLite Powered)")
 
+# --- CORS MIDDLEWARE ---
+# This ensures Streamlit can safely communicate with Render across different servers
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # --- DATABASE DEPENDENCY ---
-# This opens a connection to the database for every request and closes it safely when done
 def get_db():
     db = SessionLocal()
     try:
@@ -87,7 +97,8 @@ class BudgetCreate(BaseModel):
     category: str
     monthly_limit: float = Field(..., gt=0)
 
-# --- ROUTES (Interacting with SQLite via SQLAlchemy) ---
+
+# --- ROUTES ---
 
 # 1. USER AUTHENTICATION
 @app.post("/register", status_code=status.HTTP_201_CREATED, tags=["Auth"])
@@ -98,7 +109,7 @@ def register(user: UserRegister, db: Session = Depends(get_db)):
     
     new_user = UserModel(username=user.username, password=user.password)
     db.add(new_user)
-    db.commit() # Saves permanently to finance.db
+    db.commit()
     return {"message": "User registered successfully"}
 
 @app.post("/token", tags=["Auth"])
@@ -119,7 +130,7 @@ def add_expense(expense: ExpenseCreate, current_user: str = Depends(get_current_
         description=expense.description
     )
     db.add(new_expense)
-    db.commit() # Saves permanently to finance.db
+    db.commit()
     db.refresh(new_expense)
     return new_expense
 
@@ -131,7 +142,6 @@ def get_expenses(current_user: str = Depends(get_current_user), db: Session = De
 # 3. BUDGETING
 @app.post("/budgets", tags=["Budgeting"])
 def set_budget(budget: BudgetCreate, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Check if a budget for this category already exists, if so update it, otherwise create it
     existing_budget = db.query(BudgetModel).filter(
         BudgetModel.username == current_user, 
         BudgetModel.category == budget.category
@@ -143,8 +153,8 @@ def set_budget(budget: BudgetCreate, current_user: str = Depends(get_current_use
         new_budget = BudgetModel(username=current_user, category=budget.category, monthly_limit=budget.monthly_limit)
         db.add(new_budget)
         
-    db.commit() # Saves permanently to finance.db
-    return {"message": f"Budget for '{budget.category}' set to ${budget.monthly_limit}"}
+    db.commit()
+    return {"message": f"Budget for '{budget.category}' set to ₱{budget.monthly_limit}"}
 
 
 # 4. ANALYTICS & WARNINGS
@@ -153,7 +163,6 @@ def get_analytics(current_user: str = Depends(get_current_user), db: Session = D
     user_budgets = db.query(BudgetModel).filter(BudgetModel.username == current_user).all()
     user_expenses = db.query(ExpenseModel).filter(ExpenseModel.username == current_user).all()
     
-    # Calculate total spending by category
     spending_by_category = {}
     for exp in user_expenses:
         spending_by_category[exp.category] = spending_by_category.get(exp.category, 0.0) + exp.amount
@@ -172,28 +181,38 @@ def get_analytics(current_user: str = Depends(get_current_user), db: Session = D
         }
         
         if spent > b.monthly_limit:
-            warnings.append(f"⚠️ OVER BUDGET ALERT: You have exceeded your '{b.category}' budget by ${abs(remaining):.2f}!")
+            warnings.append(f"⚠️ OVER BUDGET ALERT: You have exceeded your '{b.category}' budget by ₱{abs(remaining):.2f}!")
             
     return {
         "user": current_user,
         "category_reports": report,
         "warnings": warnings if warnings else ["✅ All clear! You are within your budget limits."]
     }
-# --- ADD THESE NEW ROUTE ENDPOINTS TO YOUR main.py ---
-
-@app.delete("/budgets/{category}")
-def delete_specific_budget(category: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    budget = db.query(Budget).filter(Budget.category == category, Budget.user_id == current_user.id).first()
-    if not budget:
-        raise HTTPException(status_code=404, detail="Budget category not found")
-    
-    db.delete(budget)
-    db.commit()
-    return {"message": f"Successfully deleted budget for {category}"}
 
 
-@app.delete("/budgets")
-def delete_all_budgets(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    db.query(Budget).filter(Budget.user_id == current_user.id).delete()
-    db.commit()
-    return {"message": "All budgets have been successfully reset"}
+# 5. BUDGET CLEANING CONTROLS (FIXED & ALIGNED)
+@app.delete("/budgets/{category}", tags=["Budgeting"])
+def delete_specific_budget(category: str, current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        budget = db.query(BudgetModel).filter(BudgetModel.category == category, BudgetModel.username == current_user).first()
+        if not budget:
+            raise HTTPException(status_code=404, detail="Budget category not found")
+        
+        db.delete(budget)
+        db.commit()
+        return {"status": "success", "message": f"Successfully deleted budget for {category}"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/budgets", tags=["Budgeting"])
+@app.delete("/budgets/", tags=["Budgeting"])
+def delete_all_budgets(current_user: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        db.query(BudgetModel).filter(BudgetModel.username == current_user).delete(synchronize_session=False)
+        db.commit()
+        return {"status": "success", "message": "All budgets have been successfully reset"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
